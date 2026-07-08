@@ -7,7 +7,7 @@ export type ComputedCallback<T> = () => T;
 
 export type Source<T> = ISignal<T> | IComputed<T>;
 
-export type Ctx = EffectCallback | IEffect;
+export type Ctx = EffectCallback | IEffect | IComputed<unknown>;
 
 export interface ISignal<T> {
   get(): T;

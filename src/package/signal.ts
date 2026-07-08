@@ -1,3 +1,4 @@
+import { isComputed } from "./computed.ts";
 import { getCurrentEffect, isEffect, scheduleEffect } from "./effect.ts";
 import type { Deps, IEffect, ISignal, Listener } from "./types.ts";
 
@@ -16,7 +17,10 @@ export class Signal<T = unknown> implements ISignal<T> {
       if (isEffect(ctx)) {
         this.#deps.add(ctx);
         ctx.addSources<T>(this);
-      } else {
+      } else if (isComputed(ctx)) {
+        this.#deps.add(ctx.invalidate);
+        ctx.trackUpstream(this);
+      } else if (typeof ctx === "function") {
         this.#deps.add(ctx);
       }
     }

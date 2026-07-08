@@ -1,9 +1,11 @@
-import { ref, effect, computed } from "./package/index.ts";
-const value = ref(10);
+import { computed, ref, effect } from "./package/index.ts";
 
-const plusOne = computed(() => value.get() + 10);
-const multiply = computed(() => plusOne.get()! * 2);
+const flag = ref(true);
+const a = ref(1);
+const c = computed(() => (flag.get() ? a.get() : 0));
 
-effect(() => console.log(multiply.get()));
+effect(() => console.log(c.get()));
 
-value.set(20);
+setTimeout(() => {
+  flag.set(false);
+}, 1000);

@@ -9,8 +9,6 @@ type Context = Ctx | typeof UNTRACKED;
 // runtime context
 const ctx: Context[] = [];
 
-const cleanups: (() => void)[] = [];
-
 // очередь на flush
 const pendingEffects = new Set<IEffect | EffectCallback>();
 
@@ -21,6 +19,7 @@ export class Effect implements IEffect {
   #fn: () => void;
 
   #cleanup: (() => void) | null = null;
+  #cleanups = new Set<() => void>();
 
   #sources = new Set<Source<unknown>>();
 
@@ -38,8 +37,8 @@ export class Effect implements IEffect {
       this.#cleanup = null;
     }
 
-    this.#sources.forEach((s) => s.unsubscribe(this));
-    this.#sources.clear();
+    this.#disposeCleanup();
+    this.#disposeSubscribers();
 
     pushEffect(this);
 
@@ -60,12 +59,26 @@ export class Effect implements IEffect {
       this.#cleanup = null;
     }
 
-    this.#sources.forEach((source) => source.unsubscribe(this));
-    this.#sources.clear();
+    this.#disposeCleanup();
+    this.#disposeSubscribers();
   }
 
   addSources<T>(source: Source<T>) {
     this.#sources.add(source);
+  }
+
+  addCleanup(fn: () => void) {
+    this.#cleanups.add(fn);
+  }
+
+  #disposeCleanup() {
+    this.#cleanups.forEach((fn) => fn());
+    this.#cleanups.clear();
+  }
+
+  #disposeSubscribers() {
+    this.#sources.forEach((source) => source.unsubscribe(this));
+    this.#sources.clear();
   }
 }
 
@@ -90,16 +103,17 @@ export function popEffect() {
 }
 
 export function onCleanup(fn: () => void) {
-  cleanups.push(fn);
+  const ctx = getCurrentEffect();
+
+  if (ctx && isEffect(ctx)) {
+    ctx.addCleanup(fn);
+  }
 }
 
 export function effect(fn: () => void) {
   const effect = new Effect(fn);
 
   effect.run();
-
-  cleanups.forEach((c) => c());
-  cleanups.length = 0;
 
   return () => effect.dispose();
 }

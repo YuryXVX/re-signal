@@ -11,6 +11,7 @@ import type {
   IComputed,
   IEffect,
   Listener,
+  Source,
 } from "./types.ts";
 
 export class Computed<T> implements IComputed<T> {
@@ -20,9 +21,12 @@ export class Computed<T> implements IComputed<T> {
   #dirty = false;
 
   #sources = new Set<unknown>();
+  #upstream = new Set<Source<T>>();
 
   constructor(fn: ComputedCallback<T>) {
     this.#fn = fn;
+
+    this.invalidate = this.invalidate.bind(this);
   }
 
   get() {
@@ -32,9 +36,10 @@ export class Computed<T> implements IComputed<T> {
       if (isEffect(ctx)) {
         this.#sources.add(ctx);
         ctx.addSources<T>(this);
-      }
-
-      if (typeof ctx === "function") {
+      } else if (isComputed(ctx)) {
+        this.#sources.add(ctx.invalidate);
+        ctx.trackUpstream(this);
+      } else if (typeof ctx === "function") {
         this.#sources.add(ctx);
       }
     }
@@ -65,13 +70,24 @@ export class Computed<T> implements IComputed<T> {
     this.#sources.delete(listener);
   }
 
-  #invalidate = () => {
+  invalidate() {
+    if (this.#dirty) return;
     this.#dirty = true;
     this.notify();
-  };
+  }
+
+  trackUpstream(source: Source<T>) {
+    this.#upstream.add(source);
+  }
 
   #recomputed() {
-    pushEffect(this.#invalidate);
+    this.#upstream.forEach((source) => {
+      source.unsubscribe(this.invalidate);
+    });
+
+    this.#upstream.clear();
+
+    pushEffect(this);
 
     const prev = this.#cacheValue;
     const next = this.#fn();
@@ -86,12 +102,6 @@ export class Computed<T> implements IComputed<T> {
   }
 
   notify() {
-    const hasFunc = [...this.#sources].some((cb) => typeof cb === "function");
-
-    if (hasFunc && this.#dirty) {
-      this.#recomputed();
-    }
-
     this.#sources.forEach((source) => {
       if (isComputed(source)) source.invalidate();
       else if (isEffect(source)) scheduleEffect(source);
@@ -99,21 +109,14 @@ export class Computed<T> implements IComputed<T> {
     });
   }
 
-  #markDirty() {
-    this.#dirty = true;
-  }
-
-  invalidate() {
-    this.#markDirty();
-    this.notify();
-  }
-
   [Symbol.dispose]() {
+    this.#upstream.forEach((s) => s.unsubscribe(this.invalidate));
+    this.#upstream.clear();
     this.#sources.clear();
   }
 }
 
-function isComputed<T>(val: unknown): val is Computed<T> {
+export function isComputed<T>(val: unknown): val is Computed<T> {
   return val instanceof Computed;
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "reactive-lib",
+  "name": "re-signal",
   "version": "1.0.0",
   "type": "module",
   "description": "Реализация реактивной (push-pull) библиотеки",
