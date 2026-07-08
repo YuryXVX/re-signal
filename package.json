@@ -1,0 +1,31 @@
+{
+  "name": "reactive-lib",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Реализация реактивной (push-pull) библиотеки",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon"
+  },
+  "keywords": [
+    "typescript",
+    "reactive",
+    "push",
+    "pull"
+  ],
+  "author": "yury bagdadaryan",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "jiti": "^2.7.0",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1"
+  },
+  "dependencies": {
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2"
+  }
+}
