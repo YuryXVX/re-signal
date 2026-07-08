@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Реализация реактивной (push-pull) библиотеки",
-  "main": "index.js",
+  "main": "./dist/re-signal.cjs",
+  "module": "./dist/re-signal.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/re-signal.js",
+      "require": "./dist/re-signal.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "dev": "nodemon"
+    "dev": "nodemon",
+    "build": "vite build",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "keywords": [
     "typescript",
@@ -17,12 +32,17 @@
   "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
     "eslint": "^10.6.0",
     "globals": "^17.7.0",
     "jiti": "^2.7.0",
+    "terser": "^5.48.0",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.62.1",
+    "vite": "^6.4.3",
+    "vite-plugin-dts": "^5.0.3",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "nodemon": "^3.1.14",

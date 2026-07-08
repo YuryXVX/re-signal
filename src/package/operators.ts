@@ -16,7 +16,7 @@ class LazyMap<T, U> {
       this.#computed = new Computed(() => this.#fn(this.#source.get()));
     }
 
-    this.#computed.get();
+    return this.#computed.get();
   }
 }
 
