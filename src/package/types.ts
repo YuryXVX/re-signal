@@ -32,5 +32,5 @@ export type Deps<T> = Listener<T> | IEffect;
 
 export interface Readable<T> {
   get(): T;
-  subscribe(listener: Listener<T> | IEffect): void;
+  subscribe(listener: Listener<T>): () => void;
 }
