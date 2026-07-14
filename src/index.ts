@@ -1,13 +1,21 @@
-import { computed, ref, effect } from "./package/index.ts";
+import { combine, effect, mapOp, pickOp, ref } from "./package/index.ts";
 
-const flag = ref(true);
 const a = ref(1);
-const c = computed(() => (flag.get() ? a.get() : 0));
-const d = computed(() => c.get() === 1);
+const b = ref(2);
 
-const dispose = effect(() => console.log(d.get()));
+const result = combine(
+  [
+    [
+      a,
+      mapOp((v) => {
+        return { v: v + 10 };
+      }),
 
-dispose();
-setTimeout(() => {
-  flag.set(false);
-}, 1000);
+      pickOp("v"),
+    ],
+    b,
+  ],
+  ([x, y]) => x + y,
+);
+
+effect(() => console.log(result.get()));

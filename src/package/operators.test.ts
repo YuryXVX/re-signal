@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { derive, filter, map, pick, when } from "./operators.ts";
+import {
+  combine,
+  derive,
+  filter,
+  filterOp,
+  map,
+  mapOp,
+  pick,
+  pickOp,
+  pipe,
+  when,
+} from "./operators.ts";
 import { effect } from "./effect.ts";
 import { ref } from "./signal.ts";
 
@@ -169,5 +180,161 @@ describe("pick", () => {
     const pickOperator = pick(source, "a.b");
 
     expect(pickOperator.get()).toBe(1);
+  });
+});
+
+describe("pipe", () => {
+  it("возвращает исходный readable без операторов", () => {
+    const source = ref(5);
+    const result = pipe(source);
+
+    expect(result.get()).toBe(5);
+  });
+
+  it("не вычисляет цепочку при создании", () => {
+    const source = ref(3);
+    const mapper = vi.fn((v: number) => v * 2);
+
+    pipe(source, mapOp(mapper));
+
+    expect(mapper).not.toHaveBeenCalled();
+  });
+
+  it("применяет операторы слева направо", () => {
+    const source = ref({ value: 2 });
+
+    const result = pipe(
+      source,
+      pickOp("value"),
+      mapOp((v) => v * 3),
+      filterOp((v) => v > 5),
+    );
+
+    expect(result.get()).toBe(6);
+  });
+
+  it("пересчитывается при изменении источника", () => {
+    const source = ref(1);
+
+    const result = pipe(
+      source,
+      mapOp((v) => v + 1),
+      mapOp((v) => v * 2),
+    );
+
+    expect(result.get()).toBe(4);
+
+    source.set(5);
+
+    expect(result.get()).toBe(12);
+  });
+
+  it("работает внутри effect", async () => {
+    const source = ref(1);
+
+    const result = pipe(source, mapOp((v) => v * 2));
+    const fn = vi.fn(() => result.get());
+
+    effect(fn);
+    source.set(3);
+
+    await flushEffects();
+
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("combine", () => {
+  it("не вычисляет значение при создании", () => {
+    const combiner = vi.fn((values: readonly number[]) => values[0] + values[1]);
+
+    combine([ref(1), ref(2)], combiner);
+
+    expect(combiner).not.toHaveBeenCalled();
+  });
+
+  it("комбинирует несколько сигналов (tuple)", () => {
+    const a = ref(1);
+    const b = ref(2);
+
+    const result = combine([a, b], ([x, y]) => x + y);
+
+    expect(result.get()).toBe(3);
+  });
+
+  it("комбинирует несколько сигналов (object)", () => {
+    const a = ref(1);
+    const b = ref(2);
+
+    const result = combine({ a, b }, ({ a, b }) => a + b);
+
+    expect(result.get()).toBe(3);
+  });
+
+  it("применяет операторы к источнику перед combine", () => {
+    const a = ref(2);
+    const b = ref(3);
+
+    const result = combine(
+      [a, [b, mapOp((v) => v * 10)] as const],
+      ([x, y]) => x + y,
+    );
+
+    expect(result.get()).toBe(32);
+  });
+
+  it("применяет операторы в object-форме", () => {
+    const price = ref(10);
+    const qty = ref(2);
+
+    const result = combine(
+      {
+        price: [price, mapOp((v) => v * 1.2)] as const,
+        qty,
+      },
+      ({ price, qty }) => price * qty,
+    );
+
+    expect(result.get()).toBe(24);
+  });
+
+  it("пересчитывается при изменении любого источника", () => {
+    const a = ref(1);
+    const b = ref(2);
+
+    const result = combine([a, b], ([x, y]) => x * y);
+
+    expect(result.get()).toBe(2);
+
+    b.set(5);
+
+    expect(result.get()).toBe(5);
+  });
+
+  it("работает внутри effect", async () => {
+    const a = ref(1);
+    const b = ref(2);
+
+    const result = combine([a, b], ([x, y]) => x + y);
+    const fn = vi.fn(() => result.get());
+
+    effect(fn);
+    a.set(3);
+
+    await flushEffects();
+
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("комбинируется с pipe", () => {
+    const a = ref(2);
+    const b = ref(3);
+
+    const result = pipe(
+      combine([a, b], ([x, y]) => x + y),
+      mapOp((v) => v * 2),
+    );
+
+    expect(result.get()).toBe(10);
   });
 });
