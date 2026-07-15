@@ -8,7 +8,7 @@ const result = combine(
     [
       a,
       mapOp((v) => {
-        return { v: v + 10 };
+        return { v: v + 100 };
       }),
 
       pickOp("v"),
@@ -19,3 +19,6 @@ const result = combine(
 );
 
 effect(() => console.log(result.get()));
+
+a.set(200);
+b.set(100);
