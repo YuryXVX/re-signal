@@ -94,14 +94,3 @@ a.set(3)
 | `Effect` | async, microtask через `flush()` (или сразу после `batch`) |
 
 ---
-
-## Что уже есть (vs roadmap в cs)
-
-| Фича | Статус |
-|------|--------|
-| `batch(fn)` | есть |
-| `untrack(fn)` | есть |
-| `onCleanup(fn)` | есть |
-| cleanup stale deps в Computed (`#upstream`) | есть |
-| `reaction(track, effect)` | есть |
-| `pipe` / `combine` / `pick` / `when` | есть |

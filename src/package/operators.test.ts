@@ -1,17 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+import { Option } from "./option.ts";
 import {
   combine,
   derive,
   filter,
+  filterMap,
   filterOp,
   map,
   mapOp,
+  mapSomeOp,
   pick,
   pickOp,
   pipe,
+  tryMap,
+  unwrapOrOp,
   when,
 } from "./operators.ts";
 import { effect } from "./effect.ts";
+import { Result } from "./result.ts";
 import { ref } from "./signal.ts";
 
 async function flushEffects() {
@@ -113,22 +119,22 @@ describe("filter", () => {
     expect(mapper).not.toHaveBeenCalled();
   });
 
-  it("фильтрует значение источника", () => {
+  it("возвращает Some при прохождении предиката", () => {
     const source = ref(3);
     const filtered = filter(source, (v) => v > 2);
 
-    expect(filtered.get()).toBe(3);
+    expect(filtered.get()).toEqual(Option.some(3));
   });
 
-  it("пересчитывается при изменении источника", () => {
+  it("возвращает None если предикат false", () => {
     const source = ref(2);
     const filtered = filter(source, (v) => v > 1);
 
-    expect(filtered.get()).toBe(2);
+    expect(filtered.get()).toEqual(Option.some(2));
 
     source.set(1);
 
-    expect(filtered.get()).toBe(undefined);
+    expect(filtered.get()).toEqual(Option.none);
   });
 });
 
@@ -166,20 +172,27 @@ describe("when", () => {
 });
 
 describe("pick", () => {
-  it("возвращает значение поля", () => {
+  it("возвращает Some значения поля", () => {
     const source = ref({ a: 1 });
 
     const pickOperator = pick(source, "a");
 
-    expect(pickOperator.get()).toBe(1);
+    expect(pickOperator.get()).toEqual(Option.some(1));
   });
 
-  it("возвращает значение вложенного", () => {
+  it("возвращает Some вложенного", () => {
     const source = ref({ a: { b: 1 } });
 
     const pickOperator = pick(source, "a.b");
 
-    expect(pickOperator.get()).toBe(1);
+    expect(pickOperator.get()).toEqual(Option.some(1));
+  });
+
+  it("возвращает None если ключа нет в runtime", () => {
+    const source = ref({ a: 1 } as { a: number; missing?: number });
+    const picked = pick(source, "missing");
+
+    expect(picked.get()).toEqual(Option.none);
   });
 });
 
@@ -200,17 +213,32 @@ describe("pipe", () => {
     expect(mapper).not.toHaveBeenCalled();
   });
 
-  it("применяет операторы слева направо", () => {
+  it("применяет операторы слева направо с Option", () => {
     const source = ref({ value: 2 });
 
     const result = pipe(
       source,
       pickOp("value"),
-      mapOp((v) => v * 3),
-      filterOp((v) => v > 5),
+      mapSomeOp((v) => v * 3),
+      unwrapOrOp(-1),
     );
 
     expect(result.get()).toBe(6);
+  });
+
+  it("filterOp в pipe даёт Option", () => {
+    const source = ref(1);
+
+    const result = pipe(
+      source,
+      mapOp((v) => v * 2),
+      filterOp((v) => v > 5),
+    );
+
+    expect(result.get()).toEqual(Option.none);
+
+    source.set(4);
+    expect(result.get()).toEqual(Option.some(8));
   });
 
   it("пересчитывается при изменении источника", () => {
@@ -244,9 +272,47 @@ describe("pipe", () => {
   });
 });
 
+describe("filterMap", () => {
+  it("мапит в Option за один шаг", () => {
+    const source = ref(3);
+    const out = filterMap(source, (v) =>
+      v > 2 ? Option.some(v * 10) : Option.none,
+    );
+
+    expect(out.get()).toEqual(Option.some(30));
+    source.set(1);
+    expect(out.get()).toEqual(Option.none);
+  });
+});
+
+describe("tryMap / Result", () => {
+  it("ok при успешном map", () => {
+    const source = ref(2);
+    const result = tryMap(source, (v) => v * 2);
+
+    expect(result.get()).toEqual(Result.ok(4));
+  });
+
+  it("err при исключении", () => {
+    const source = ref(0);
+    const result = tryMap(source, (v) => {
+      if (v === 0) throw new Error("zero");
+      return 1 / v;
+    });
+
+    const value = result.get();
+    expect(Result.isErr(value)).toBe(true);
+    if (Result.isErr(value)) {
+      expect(value.error).toBeInstanceOf(Error);
+    }
+  });
+});
+
 describe("combine", () => {
   it("не вычисляет значение при создании", () => {
-    const combiner = vi.fn((values: readonly number[]) => values[0] + values[1]);
+    const combiner = vi.fn(
+      (values: readonly number[]) => values[0]! + values[1]!,
+    );
 
     combine([ref(1), ref(2)], combiner);
 
@@ -276,7 +342,7 @@ describe("combine", () => {
     const b = ref(3);
 
     const result = combine(
-      [a, [b, mapOp((v) => v * 10)] as const],
+      [a, [b, mapOp((v: number) => v * 10)] as const],
       ([x, y]) => x + y,
     );
 
@@ -289,7 +355,7 @@ describe("combine", () => {
 
     const result = combine(
       {
-        price: [price, mapOp((v) => v * 1.2)] as const,
+        price: [price, mapOp((v: number) => v * 1.2)] as const,
         qty,
       },
       ({ price, qty }) => price * qty,
@@ -332,7 +398,7 @@ describe("combine", () => {
 
     const result = pipe(
       combine([a, b], ([x, y]) => x + y),
-      mapOp((v) => v * 2),
+      mapOp((v: number) => v * 2),
     );
 
     expect(result.get()).toBe(10);

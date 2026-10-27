@@ -20,7 +20,9 @@
     "dev": "nodemon",
     "build": "vite build",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "bench": "vitest bench --run",
+    "bench:watch": "vitest bench"
   },
   "keywords": [
     "typescript",

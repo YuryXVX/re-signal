@@ -1,0 +1,30 @@
+{
+  "name": "re-signal-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "http": "tsx ./http-server/index.ts",
+    "dom": "vite ./native-dom --open",
+    "react": "vite --config ./react/vite.config.ts --open",
+    "combine": "tsx ./combine/index.ts",
+    "dispose": "tsx ./dispose/index.ts",
+    "iterators": "tsx ./iterators/index.ts",
+    "kafka": "tsx ./kafka/index.ts",
+    "kafka:mock": "MOCK_KAFKA=1 tsx ./kafka/index.ts",
+    "kafka:up": "docker compose -f kafka/docker-compose.yml up -d",
+    "kafka:down": "docker compose -f kafka/docker-compose.yml down -v"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.3"
+  }
+}

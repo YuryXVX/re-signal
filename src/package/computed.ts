@@ -5,121 +5,179 @@ import {
   pushEffect,
   scheduleEffect,
 } from "./effect.ts";
+import { iterate } from "./iterator.ts";
+import { COMPUTED_BRAND, forEachSnapshot } from "./runtime.ts";
 
 import type {
   ComputedCallback,
+  ComputedOptions,
   IComputed,
   IEffect,
   Listener,
+  Readable,
   Source,
 } from "./types.ts";
 
-export class Computed<T> implements IComputed<T> {
+export class Computed<T> implements IComputed<T>, AsyncIterable<T> {
+  readonly [COMPUTED_BRAND] = true as const;
+
   #fn: ComputedCallback<T>;
   #cacheValue: T | undefined = undefined;
+  #hasValue = false;
   #firstRun = true;
   #dirty = false;
+  #disposed = false;
+  #equals: (prev: T, next: T) => boolean;
 
-  #sources = new Set<unknown>();
-  #upstream = new Set<Source<T>>();
+  /** OUT */
+  #effects = new Set<IEffect>();
+  #computeds = new Set<IComputed<unknown>>();
+  #listeners = new Set<Listener<T>>();
 
-  constructor(fn: ComputedCallback<T>) {
+  /** IN */
+  #upstream = new Set<Source<unknown>>();
+
+  constructor(fn: ComputedCallback<T>, options?: ComputedOptions<T>) {
     this.#fn = fn;
-
-    this.invalidate = this.invalidate.bind(this);
+    this.#equals = options?.equals ?? Object.is;
   }
 
-  get() {
+  get(): T {
+    if (this.#disposed) return this.#cacheValue as T;
+
+    this.#trackConsumer();
+    return this.#ensureValue();
+  }
+
+  peek(): T {
+    if (this.#disposed) return this.#cacheValue as T;
+    return this.#ensureValue();
+  }
+
+  #trackConsumer() {
     const ctx = getCurrentEffect();
+    if (!ctx) return;
 
-    if (ctx) {
-      if (isEffect(ctx)) {
-        this.#sources.add(ctx);
-        ctx.addSources<T>(this);
-      } else if (isComputed(ctx)) {
-        this.#sources.add(ctx.invalidate);
-        ctx.trackUpstream(this);
-      } else if (typeof ctx === "function") {
-        this.#sources.add(ctx);
-      }
+    if (isEffect(ctx)) {
+      this.#effects.add(ctx);
+      ctx.addSources(this);
+    } else if (isComputed(ctx)) {
+      this.#computeds.add(ctx);
+      ctx.trackUpstream(this);
+    } else if (typeof ctx === "function") {
+      this.#listeners.add(ctx as Listener<T>);
     }
+  }
 
+  #ensureValue(): T {
     if (this.#firstRun) {
       this.#firstRun = false;
       this.#recomputed();
-
-      return this.#cacheValue;
+      return this.#cacheValue as T;
     }
 
-    if (this.#dirty) {
-      this.#recomputed();
-    }
+    if (this.#dirty) this.#recomputed();
 
-    return this.#cacheValue;
+    return this.#cacheValue as T;
+  }
+
+  #hasObservers() {
+    return (
+      this.#effects.size > 0 ||
+      this.#computeds.size > 0 ||
+      this.#listeners.size > 0
+    );
   }
 
   subscribe(listener: Listener<T>) {
-    this.#sources.add(listener);
+    if (this.#disposed) return () => {};
+
+    this.#listeners.add(listener);
+    this.get();
 
     return () => {
-      this.unsubscribe(listener);
+      this.#listeners.delete(listener);
     };
   }
 
-  unsubscribe(listener: IEffect | Listener<T>): void {
-    this.#sources.delete(listener);
+  unsubscribe(listener: IEffect | Listener<T> | IComputed<unknown>): void {
+    if (typeof listener === "function") {
+      this.#listeners.delete(listener);
+    } else if (isEffect(listener)) {
+      this.#effects.delete(listener);
+    } else if (isComputed(listener)) {
+      this.#computeds.delete(listener);
+    }
   }
 
   invalidate() {
-    if (this.#dirty) return;
+    if (this.#disposed || this.#dirty) return;
     this.#dirty = true;
-    this.notify();
+
+    if (!this.#hasObservers()) return;
+
+    forEachSnapshot(this.#computeds, (c) => c.invalidate());
+    forEachSnapshot(this.#effects, (e) => scheduleEffect(e));
+
+    if (this.#listeners.size > 0) {
+      const value = this.#ensureValue() as T;
+      forEachSnapshot(this.#listeners, (listener) => listener(value));
+    }
   }
 
-  trackUpstream(source: Source<T>) {
+  trackUpstream(source: Source<unknown>) {
     this.#upstream.add(source);
   }
 
   #recomputed() {
-    this.#upstream.forEach((source) => {
-      source.unsubscribe(this.invalidate);
+    forEachSnapshot(this.#upstream, (source) => {
+      source.unsubscribe(this);
     });
-
     this.#upstream.clear();
 
     pushEffect(this);
-
-    const prev = this.#cacheValue;
     const next = this.#fn();
-
     popEffect();
 
     this.#dirty = false;
 
-    if (!Object.is(prev, next)) {
+    if (!this.#hasValue || !this.#equals(this.#cacheValue as T, next)) {
       this.#cacheValue = next;
+      this.#hasValue = true;
     }
   }
 
-  notify() {
-    this.#sources.forEach((source) => {
-      if (isComputed(source)) source.invalidate();
-      else if (isEffect(source)) scheduleEffect(source);
-      else if (typeof source === "function") source(this.#cacheValue);
-    });
+  dispose() {
+    if (this.#disposed) return;
+    this.#disposed = true;
+
+    forEachSnapshot(this.#upstream, (s) => s.unsubscribe(this));
+    this.#upstream.clear();
+    this.#effects.clear();
+    this.#computeds.clear();
+    this.#listeners.clear();
   }
 
   [Symbol.dispose]() {
-    this.#upstream.forEach((s) => s.unsubscribe(this.invalidate));
-    this.#upstream.clear();
-    this.#sources.clear();
+    this.dispose();
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return iterate(this as unknown as Readable<T>);
   }
 }
 
 export function isComputed<T>(val: unknown): val is Computed<T> {
-  return val instanceof Computed;
+  return (
+    typeof val === "object" &&
+    val !== null &&
+    COMPUTED_BRAND in (val as object)
+  );
 }
 
-export function computed<T>(fn: ComputedCallback<T>) {
-  return new Computed<T>(fn);
+export function computed<T>(
+  fn: ComputedCallback<T>,
+  options?: ComputedOptions<T>,
+) {
+  return new Computed<T>(fn, options);
 }

@@ -1,3 +1,5 @@
+import { Option, type Option as OptionT } from "./option.ts";
+
 export type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...0[]];
 type Join<K extends string | number, P extends string> = `${K}.${P}`;
 
@@ -25,11 +27,20 @@ export type PathValue<T, P extends string> = P extends `${infer Key}.${infer Res
     ? T[P]
     : never;
 
-export function get<T, P extends Path<T>>(o: T, path: P): PathValue<T, P> {
-  return (path as string).split(".").reduce<unknown>((acc, key) => {
-    if (acc !== null && typeof acc === "object") {
-      return (acc as Record<string, unknown>)[key];
+/** Достаёт path; отсутствующий ключ → None. */
+export function get<T, P extends Path<T>>(
+  o: T,
+  path: P,
+): OptionT<PathValue<T, P>> {
+  let acc: unknown = o;
+
+  for (const key of (path as string).split(".")) {
+    if (acc !== null && typeof acc === "object" && key in (acc as object)) {
+      acc = (acc as Record<string, unknown>)[key];
+    } else {
+      return Option.none;
     }
-    return undefined;
-  }, o) as PathValue<T, P>;
+  }
+
+  return Option.some(acc as PathValue<T, P>);
 }

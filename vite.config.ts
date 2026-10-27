@@ -39,5 +39,8 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.test.ts"],
+    benchmark: {
+      include: ["src/**/*.bench.ts"],
+    },
   },
 });

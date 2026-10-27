@@ -62,9 +62,13 @@ subscribe(listener):
 | Функция | Сигнатура | Поведение |
 |---------|-----------|-----------|
 | `map(source, fn)` | `Readable<T> → Readable<U>` | `fn(source.get())` |
-| `filter(source, pred)` | `Readable<T> → Readable<T \| undefined>` | value или `undefined` |
-| `when(cond, then, else)` | boolean source → ветка | `cond ? then() : else()` |
-| `pick(source, path)` | path `"a.b.c"` | `get(obj, path)` из `lib.ts` |
+| `filter(source, pred)` | `Readable<T> → Readable<Option<T>>` | Some / None |
+| `when(cond, then, else)` | boolean source → ветка | `cond ? then() : elseFn()` |
+| `pick(source, path)` | path `"a.b.c"` | `get(obj, path)` → `Option` |
+| `filterMap(source, fn)` | `T → Option<U>` за один шаг | без промежуточного filter |
+| `mapSome` / `andThen` / `unwrapOr` | над `Readable<Option<T>>` | контейнерные |
+| `tryMap` / `mapResult` / `unwrapResultOr` | над `Result` | fallible compute |
+| `derive(fn)` | alias на `computed(fn)` | без лишней обёртки |
 
 `pick` типобезопасен через `Path<T>` / `PathValue<T, P>`.
 
@@ -74,8 +78,11 @@ subscribe(listener):
 
 ```ts
 mapOp(fn)      // Operator<T, U>
-filterOp(pred) // Operator<T, T | undefined>
-pickOp(path)   // Operator<T, PathValue>
+filterOp(pred) // Operator<T, Option<T>>
+pickOp(path)   // Operator<T, Option<PathValue>>
+mapSomeOp(fn)  // Operator<Option<T>, Option<U>>
+unwrapOrOp(x)  // Operator<Option<T>, T>
+tryMapOp(fn)   // Operator<T, Result<U, unknown>>
 
 pipe(source, mapOp(v => v * 2), filterOp(v => v > 5))
 ```

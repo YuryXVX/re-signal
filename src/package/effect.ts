@@ -1,4 +1,5 @@
-import type { Ctx, EffectCallback, IEffect, Source } from "./types.ts";
+import { EFFECT_BRAND, forEachSnapshot } from "./runtime.ts";
+import type { Ctx, EffectCallback, IEffect, Source, Stop } from "./types.ts";
 
 const UNTRACKED = Symbol("UNTRACKED");
 let isFlushing = false;
@@ -6,23 +7,31 @@ let flushScheduled = false;
 
 type Context = Ctx | typeof UNTRACKED;
 
-// runtime context
 const ctx: Context[] = [];
-
-// очередь на flush
-const pendingEffects = new Set<IEffect | EffectCallback>();
-
-// batch
+const pendingEffects = new Set<IEffect>();
 let batchDepth = 0;
 
-export class Effect implements IEffect {
-  #fn: () => void;
+/** Оборачивает teardown в callable + `[Symbol.dispose]` для `using`. */
+export function asStop(dispose: () => void): Stop {
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    dispose();
+  };
 
+  const stop = (() => once()) as Stop;
+  stop[Symbol.dispose] = once;
+  return stop;
+}
+
+export class Effect implements IEffect {
+  readonly [EFFECT_BRAND] = true as const;
+
+  #fn: EffectCallback;
   #cleanup: (() => void) | null = null;
   #cleanups = new Set<() => void>();
-
   #sources = new Set<Source<unknown>>();
-
   #disposed = false;
 
   constructor(fn: EffectCallback) {
@@ -63,6 +72,10 @@ export class Effect implements IEffect {
     this.#disposeSubscribers();
   }
 
+  [Symbol.dispose]() {
+    this.dispose();
+  }
+
   addSources<T>(source: Source<T>) {
     this.#sources.add(source);
   }
@@ -72,25 +85,27 @@ export class Effect implements IEffect {
   }
 
   #disposeCleanup() {
-    this.#cleanups.forEach((fn) => fn());
+    forEachSnapshot(this.#cleanups, (fn) => fn());
     this.#cleanups.clear();
   }
 
   #disposeSubscribers() {
-    this.#sources.forEach((source) => source.unsubscribe(this));
+    forEachSnapshot(this.#sources, (source) => source.unsubscribe(this));
     this.#sources.clear();
   }
 }
 
-export function isEffect(ctx: unknown): ctx is Effect {
-  return ctx instanceof Effect;
+export function isEffect(value: unknown): value is Effect {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    EFFECT_BRAND in (value as object)
+  );
 }
 
 export function getCurrentEffect() {
   const effect = ctx.at(-1);
-
   if (effect === UNTRACKED) return null;
-
   return effect ?? null;
 }
 
@@ -103,19 +118,16 @@ export function popEffect() {
 }
 
 export function onCleanup(fn: () => void) {
-  const ctx = getCurrentEffect();
-
-  if (ctx && isEffect(ctx)) {
-    ctx.addCleanup(fn);
+  const current = getCurrentEffect();
+  if (current && isEffect(current)) {
+    current.addCleanup(fn);
   }
 }
 
-export function effect(fn: () => void) {
-  const effect = new Effect(fn);
-
-  effect.run();
-
-  return () => effect.dispose();
+export function effect(fn: EffectCallback): Stop {
+  const runner = new Effect(fn);
+  runner.run();
+  return asStop(() => runner.dispose());
 }
 
 export function scheduleEffect(effect: IEffect) {
@@ -125,7 +137,6 @@ export function scheduleEffect(effect: IEffect) {
 
   if (!flushScheduled) {
     flushScheduled = true;
-
     queueMicrotask(() => {
       flushScheduled = false;
       flush();
@@ -135,17 +146,13 @@ export function scheduleEffect(effect: IEffect) {
 
 function flush() {
   if (isFlushing) return;
-
   isFlushing = true;
 
   try {
     while (pendingEffects.size > 0) {
-      const copy = [...pendingEffects];
-
-      pendingEffects.clear();
-
-      copy.forEach((effect) => {
-        if (isEffect(effect)) effect.run();
+      forEachSnapshot(pendingEffects, (effect) => {
+        pendingEffects.delete(effect);
+        effect.run();
       });
     }
   } finally {
@@ -155,7 +162,6 @@ function flush() {
 
 export function batch(fn: () => void) {
   batchDepth++;
-
   try {
     fn();
   } finally {
@@ -166,7 +172,6 @@ export function batch(fn: () => void) {
 
 export function untrack<T>(fn: () => T) {
   pushEffect(UNTRACKED);
-
   try {
     return fn();
   } finally {
